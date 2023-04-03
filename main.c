@@ -2,15 +2,42 @@
 #include <stdlib.h>
 
 //tipo tabla descriptores de segmento
-typedef struct
-{
+typedef struct{
     short int base, size;
 } TRTDS;
 
+//declaracion del tipo vector de funciones PENDIENTE
+typedef void (*t_fun)(char op1,char op2);
 
+void iniciaTablaDeSegmentos(TRTDS *TDD, int RAM, int TAM){
+    (*TDD[0]).base=0;
+    (*TDD[0]).size=TAM;
+    (*TDD[0]).base=1;
+    (*TDD[1]).size=RAM-TAM;
+}
 
-void lectura(char MEM[], int *TAM)
-{
+void iniciaRegistros(short int REG){
+    REG[0]=0;//CS
+    REG[1]=1;//DS
+//    REG[2]=;
+//    REG[3]=;
+//   REG[4]=;
+    REG[5]=REG[0];//IP, al principio es igual a CS
+//    REG[6]=;
+//    REG[7]=;
+/* //no hay valores asignados para los siguientes registros
+    REG[8]=;//CC
+    REG[9]=;//AC
+    REG[10]=;
+    REG[11]=;
+    REG[12]=;
+    REG[13]=;
+    REG[14]=;
+    REG[15]=;
+*/
+}
+
+void lectura(char MEM[], int *TAM){
     FILE *arch;
     char encabezado[6], version, c;
     char mica[]="C:/Users/micae/Documents/Facultad/Arquitectura/tp/ArchivosCampus/E_MV1/fibo.vmx";
@@ -52,17 +79,19 @@ void lectura(char MEM[], int *TAM)
         printf("No se pudo abrir el archivo\n");
 }
 
-int main()
-{
+int main(){
     int TAM, RAM = 16384;
     short int REG[16]; //( 0 = CS / 1 = DS / 5 = IP / 8 = CC / 9 = AC )
     char MEM[RAM];
+    TRTDS TDS[8];
 
     //inicializacion de variables y carga de memoria
-    TRTDS TDS[8];
     lectura(MEM, &TAM);
+    iniciaTablaDeSegmentos(&TDS,RAM,TAM);
+    iniciaRegistros(REG);
 
 
+    proceso(MEM,TAM);
     return 0;
 }
 
