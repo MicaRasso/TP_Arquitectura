@@ -10,18 +10,19 @@ typedef struct{
 
 
 //declaracion del tipo vector de funciones PENDIENTE
-typedef void (t_func[256])(char op1, char op2, char MEM[], short int REG[], short int Byte[]);
+typedef void (*t_func)(char op1, char op2, char MEM[], int REG[], TRTDS TDS[], short int Byte[]);
 
-void iniciaTablaDeSegmentos(TRTDS *TDD, int RAM, int TAM){
-    (*TDD[0]).base=0;
-    (*TDD[0]).size=TAM;
-    (*TDD[1]).base=TAM;
-    (*TDD[1]).size=RAM-TAM;
+void iniciaTablaDeSegmentos(TRTDS TDS[], int RAM, int TAM)
+{
+    TDS[0].base=0;
+    TDS[0].size=TAM;
+    TDS[1].base=TAM;
+    TDS[1].size=RAM-TAM;
 }
 
-void iniciaRegistros(short int REG){
+void iniciaRegistros(int REG[]){
     REG[0]=0;//CS
-    REG[1]=1;//DS
+    REG[1]=0x10000;//DS
 //  REG[2]=;
 //  REG[3]=;
 //  REG[4]=;
@@ -43,12 +44,12 @@ void iniciaRegistros(short int REG){
 void lectura(char MEM[], int *TAM){
     FILE *arch;
     char encabezado[6], version, c;
-    char mica[]="C:/Users/micae/Documents/Facultad/Arquitectura/tp/ArchivosCampus/E_MV1/fibo.vmx";
-    char santi[]="D:/Documentos/Facultad/arquitecturaDeComputadoras/ejemplosasm/fibo.vmx";
-    arch = fopen (mica,"rb");
+    //arch = fopen("C:/Users/micae/Documents/Facultad/Arquitectura/tp/ArchivosCampus/E_MV1/fibo.vmx", "rb");
+    arch = fopen("D:/Documentos/Facultad/arquitecturaDeComputadoras/ejemplosasm/fibo.vmx", "rb");
     int i;
 
-    if(arch = fopen (mica,"rb")){
+    if(arch != NULL)
+    {
         fread(encabezado, sizeof(char), 5, arch);
         encabezado[5] = '\0';
         printf("%s\n", encabezado);
@@ -70,7 +71,8 @@ void lectura(char MEM[], int *TAM){
         *TAM|=c;
         printf("TAM: %d\n",*TAM);
 
-        for (i=0 ; i < *TAM ; i++){
+        for (i=0 ; i < *TAM ; i++)
+        {
             //printf("posicion: %d, tamanio: %d    memoria: ",i,*TAM);
             fread(&c,sizeof(char),1,arch);
             MEM[i]=c;
@@ -78,125 +80,149 @@ void lectura(char MEM[], int *TAM){
         }
         fclose(arch);
 
-    }else
+    }
+    else
         printf("No se pudo abrir el archivo\n");
 }
-    void codigos(char inst, char *op1, char *op2, char *codop)
-    {
-        char aux = inst;
-        *op1 = (inst<<0x6)&0x03;
-        *op2 = (inst<<0x4)&0x03;
-        if (*op1 == 3) // probar 0x03
-            *codop = inst;
+
+void codigos(char inst, char *op1, char *op2, char *codop)
+{
+    char aux = inst;
+    *op1 = (inst<<0x6)&0x03;
+    *op2 = (inst<<0x4)&0x03;
+    if (*op1 == 3) // probar 0x03
+        *codop = inst;
+    else
+        if (*op2 == 3)
+            *codop = inst&0x3F;
         else
-            if (*op2 == 3)
-                *codop = inst&0x3F;
-            else
-                *codop = inst&0x0F;
+            *codop = inst&0x0F;
+}
+
+void MOV(char op1, char op2, char MEM[], int REG[], TRTDS TDS[], short int Byte)
+{
+    char auxchar, registro1, registro2, segmento1, segmento2;
+    short int offset1, offset2;
+    int i, aux1 = 0, aux2 = 0; // "instrucciones"
+
+    switch (op1)
+    {
+        case 0: // op1 es memoria
+            for (i = 0 ; i < 3 ; i++)
+            {
+
+                aux1 = aux1<<8;
+                auxchar = MEM[REG[5]++];
+                aux1 |= auxchar;
+                printf("aux1: %d auxchar: %d\n", aux1, auxchar);
+            }
+        break;
+        case 2: // op1 es registro
+            auxchar = MEM[REG[5]++];
+            aux1 = auxchar;
+        break;
+        }
+
+    switch (op2)
+    {
+        case 0: //op2 es memoria
+            for (i = 0 ; i < 3 ; i++)
+            {
+                aux2 = aux2<<8;
+                auxchar = MEM[REG[5]++];
+                aux2 |= auxchar;
+            }
+            registro2 = (aux2>>0x10)&0x0F;
+            offset2 = (aux2&0xFFFF);
+            if (registro2 == 1) //ds
+                registro2 = REG[1]>>16;
+            aux2 = MEM[REG[registro2]+offset2];
+        break;
+        case 1: //op2 es inmediato
+            for (i = 0 ; i < 2 ; i++)
+            {
+                aux2 = aux2<<8;
+                auxchar = MEM[REG[5]++];
+                aux2 |= auxchar;
+            }
+        break;
+        case 2: //op2 es registro
+            auxchar = MEM[REG[5]++];
+            aux2 = auxchar;
+            registro2 = aux2&0x0F;
+            segmento2 = (aux2>>4)&0x03;
+            aux2 = REG[registro2];
+            switch(segmento2)
+            {
+                case 1:
+                    aux2 = aux2&0xFF;
+                break;
+                case 2:
+                    aux2 = (aux2>>0x4)&0xFF;
+                break;
+                case 3:
+                    aux2 = aux2&0xFFFF;
+                break;
+                    }
+        break;
     }
 
-    void MOV(char op1, char op2, char MEM[], short int REG[], TRTDS TDS[], short int Byte)
+    if(op1 == 0) //op1 es memoria
     {
-        char auxchar, registro1, registro2;
-        short int offset1, offset2;
-        int i, aux1 = 0, aux2 = 0; // "instrucciones"
-        switch (op1)
+        registro1 = (aux1>>16)&0x0F;
+        offset1 = (aux1&0xFFFF);
+        if(registro1 == 1) //ds
+            registro1 = TDS[REG[1]>>16].base;
+        else
+            registro1 = TDS[REG[1]>>16].base + REG[registro1];
+        MEM[registro1+offset1] = aux2;
+    }
+    else //op1 es registro
+    {
+        registro1 = aux1&0x0F;
+        segmento1 = (aux1>>4)&0x03;
+        switch(segmento1)
         {
             case 0:
-                for (i = 0 ; i < 3, i++)
-                {
-                    aux1 = aux1<<8;
-                    auxchar = MEM[REG[5]++];
-                    aux1 |= auxchar;
-                }
-            break;
-            case 2:
-                auxchar = MEM[REG[5]++];
-                aux1 = auxchar;
-            break;
-
-            }
-
-        switch (op2)
-        {
-            case 0:
-                for (i = 0 ; i < 3, i++)
-                {
-                    aux2 = aux2<<8;
-                    auxchar = MEM[REG[5]++];
-                    aux2 |= auxchar;
-                }
+                REG[registro1] = aux2;
             break;
             case 1:
-                for (i = 0 ; i < 2, i++)
-                {
-                    aux2 = aux2<<8;
-                    auxchar = MEM[REG[5]++];
-                    aux2 |= auxchar;
-                }
+                REG[registro1] = (REG[registro1] & 0xFFFFFF00);
+                REG[registro1] = REG[registro1] | aux2;
             break;
             case 2:
-                auxchar = MEM[REG[5]++];
-                aux2 = auxchar;
+                REG[registro1] = (REG[registro1] & 0xFFFF00FF);
+                REG[registro1] = REG[registro1] | (aux2<<8);
             break;
-        if(op1 == 0)
-        {
-            registro1 = (op1>>0x10)&0x0F;
-            offset1 = (op1&0xFFFF);
-            if(op2 == 0)
-            {
-                registro2 = (op2>>0x10)&0x0F;
-                offset2 = (op2&0xFFFF);
-                if(registro1 == 0) //ds
-                    if (registro2 == 0)
-                        MEM[TDS[REG[1]]+offset1] = MEM[TDS[REG[1]]+offset2];
-                    else
-                        MEM[TDS[REG[1]]+offset1] = MEM[REG[registro2]+offset2];
-                else
-                    if (registro2 == 0)
-                        MEM[REG[registro1]+offset1] = MEM[TDS[REG[1]]+offset2];
-                    else
-                        MEM[REG[registro1]+offset1] = MEM[REG[registro2]+offset2];
-            }
-            else
-                if(op2 == 1)
-                    if(registro1 == 0) //ds
-                        MEM[TDS[REG[1]]+offset1] = aux2;
-                    else
-                        MEM[REG[registro1]+offset1] = aux2;
-                else //op2 es 2
-                    if(registro1 == 0) //ds
-                        MEM[TDS[REG[1]]+offset1] = REG[registro2];
-                    else
-                        MEM[REG[registro1]+offset1] = REG[registro2];
-        }
-        else //op1 es registro
-        {
-
+            case 3:
+                REG[registro1] = (REG[registro1] & 0xFFFF0000);
+                REG[registro1] = REG[registro1] | aux2;
         }
     }
+    printf("MEM[10]= %d \n", MEM[TDS[0].size+10]);
+}
 
-    void procesoDatos(char MEM[], TRTDS TDS[], short int REG[], short int Byte[], t_func funciones)
+void procesoDatos(char MEM[], TRTDS TDS[], int REG[], short int Byte[], t_func funciones[])
+{
+    char inst, op1, op2, codop;
+    int i, n = TDS[REG[1]>>16].base;
+   // i = REG[1]>>16;
+   // n = TDS[i].base;
+    for (i = 0 ; i < n ; i++)
     {
-        char inst, op1, op2, codop;
-        int i, n = TDS[REG[1]].base;
-        short int IPaux;
-
-        for (i = 0 ; i < n ; i++)
-        {
-            inst = MEM[i];
-            codigos(inst, &op1, &op2, &codop);
-            //IPaux = REG[5];
-            REG[5] += 1;// + Byte[op1] + Byte[op2];
-
-            funciones[codop](op1, op2, MEM, REG, Byte);
-        }
+        inst = MEM[i];
+        codigos(inst, &op1, &op2, &codop);
+        REG[5]++;
+        printf("hola \n");
+        funciones[codop](op1, op2, MEM, REG, TDS, Byte);
+        printf("hola2 \n");
     }
+}
 
-    void cargaFunciones(t_func funciones)
-    {
+void cargaFunciones(t_func funciones[])
+{
         funciones[0] = MOV;
-        funciones[1] = ADD;
+        /*funciones[1] = ADD;
         funciones[2] = SUB;
         funciones[3] = SWAP;
         funciones[4] = MUL;
@@ -207,6 +233,7 @@ void lectura(char MEM[], int *TAM){
         funciones[9] = AND;
         funciones[10] = OR;
         funciones[11] = XOR;
+
         funciones[48] = SYS;
         funciones[49] = JMP;
         funciones[50] = JZ;
@@ -219,28 +246,28 @@ void lectura(char MEM[], int *TAM){
         funciones[57] = LDH;
         funciones[58] = RND;
         funciones[59] = NOT;
-        funciones[240] = STOP;
+        funciones[240] = STOP;*/
     }
 
 
 
 int main(){
-    int TAM, RAM = 16384;
-    short int REG[16]; //( 0 = CS / 1 = DS / 5 = IP / 8 = CC / 9 = AC )
+    int TAM, RAM = 16384, REG[16];
+    //( 0 = CS / 1 = DS / 5 = IP / 8 = CC / 9 = AC )
     short int Byte[4] = {3,2,1,0};
     char MEM[RAM];
     TRTDS TDS[8];
     //declaracion de funciones
-    t_func funciones;
+    t_func funciones[256];
     cargaFunciones(funciones);
 
     //inicializacion de variables y carga de memoria
     lectura(MEM, &TAM);
-    iniciaTablaDeSegmentos(&TDS,RAM,TAM);
+    iniciaTablaDeSegmentos(TDS, RAM, TAM);
     iniciaRegistros(REG);
 
 
-    proceso(MEM,TAM);
+    procesoDatos(MEM, TDS, REG, Byte, funciones);
     return 0;
 }
 
