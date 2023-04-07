@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 //tipo tabla descriptores de segmento
-typedef struct{
+typedef struct
+{
     short int base, size;
 } TRTDS;
 
@@ -17,7 +19,8 @@ void iniciaTablaDeSegmentos(TRTDS TDS[], int RAM, int TAM)
     TDS[1].size=RAM-TAM;
 }
 
-void iniciaRegistros(int REG[]){
+void iniciaRegistros(int REG[])
+{
     REG[0]=0;//CS
     REG[1]=0x10000;//DS
 //  REG[2]=;
@@ -38,6 +41,11 @@ void iniciaRegistros(int REG[]){
 */
 }
 
+short int baseds(TRTDS TDS[], int REG[])
+{
+    return TDS[(REG[1])>>16].base;
+}
+
 short int corrimiento (int aux, int izq, int der)
 {
     aux = (aux<<8)>>8;
@@ -56,10 +64,10 @@ void lectura(char MEM[], int *TAM)
     {
         fread(encabezado, sizeof(char), 5, arch);
         encabezado[5] = '\0';
-        printf("%s\n", encabezado);
+        printf("%s ", encabezado);
 
         fread(&version, sizeof(char), 1, arch);
-        printf("%d\n", version);
+        printf("Ver: %d ", version);
 
         /*tomo los caracteres uno a uno y los opero bit a bit para pasarlos a (int)tamaño*/
         *TAM=0x00;
@@ -94,14 +102,14 @@ void codigos(char inst, char *op1, char *op2, char *codop)
             *codop = inst&0x3F;
         else
             *codop = inst&0x0F;
-    printf("\nop1: %d - op2: %d - codop: %d\n",*op1, *op2, *codop);
+    //printf("\nop1: %d - op2: %d - codop: %d\n",*op1, *op2, *codop);
 }
 
 void MOV(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
 {
     char auxchar = 0, posmem1 = 0, posmem2 = 0, registro1 = 0, registro2 = 0, segmento1 = 0, segmento2 = 0;
     short int inmediato2 = 0, offset1 = 0, offset2 = 0;
-    int valor2 = 0; // "instrucciones"
+    int i = 0, valor2 = 0; // "instrucciones"
 
     switch (op1)
     {
@@ -110,7 +118,7 @@ void MOV(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
             offset1 = MEM[REG[5]++];
             offset1 = offset1<<8;
             offset1 |= MEM[REG[5]++];
-            posmem1 = TDS[REG[1]>>16].base;
+            posmem1 = baseds(TDS, REG) + offset1;
             if(registro1 != 1)
                 posmem1 += REG[registro1];
         break;
@@ -128,11 +136,15 @@ void MOV(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
             offset2 = MEM[REG[5]++];
             offset2 = offset2<<8;
             offset2 |= MEM[REG[5]++];
-            posmem2 = TDS[REG[1]>>16].base;
+            posmem2 = baseds(TDS, REG) + offset2;
             if(registro2 != 1)
                 posmem2 += REG[registro2];
-            valor2 = MEM[posmem2+offset2];
-
+            if (op1 == 0)
+                for (i = 0 ; i < 4 ; i++)
+                {
+                    valor2 = valor2<<8;
+                    valor2 = MEM[posmem2+i];
+                }
         break;
         case 1: //op2 es inmediato
             inmediato2 = MEM[REG[5]++];
@@ -141,7 +153,6 @@ void MOV(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
             valor2 = inmediato2;
         break;
         case 2: //op2 es registro
-            printf("valor 2:%d", valor2);
             auxchar = MEM[REG[5]++];
             registro2 = auxchar&0x0F;
             segmento2 = (auxchar>>4)&0x03;
@@ -162,7 +173,22 @@ void MOV(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
     }
 
     if(op1 == 0) //op1 es memoria
-        MEM[posmem1+offset1] = valor2;
+        if (op2 == 0) //op2 es memoria
+            for (i = 0 ; i < 4 ; i++)
+                MEM[posmem1+i] = MEM[posmem2+i];
+        else
+            if (op2 == 1) // op2 es inmediato
+            {
+                MEM[posmem1+2] = valor2>>8;
+                MEM[posmem1+3] = valor2;
+            }
+            else // op2 es registro
+            {
+                MEM[posmem1] = valor2>>24;
+                MEM[posmem1+1] = valor2>>16;
+                MEM[posmem1+2] = valor2>>8;
+                MEM[posmem1+3] = valor2;
+            }
     else //op1 es registro
     {
         switch(segmento1)
@@ -172,28 +198,43 @@ void MOV(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
             break;
             case 1:
                 REG[registro1] &= 0xFFFFFF00;
+                if (op2 != 2)
+                    if ((((valor2>>8)&0x01) == 1))
+                        valor2 |= 0xFFFFFF00;
+                    else
+                        valor2 &= 0x000000FF;
                 REG[registro1] |= valor2;
             break;
             case 2:
                 REG[registro1] &= 0xFFFF00FF;
+                if (op2 != 2)
+                    if ((((valor2>>8)&0x01) == 1))
+                        valor2 |= 0xFFFFFF00;
+                    else
+                        valor2 &= 0x000000FF;
                 REG[registro1] |= valor2<<8;
             break;
             case 3:
                 REG[registro1] &= 0xFFFF0000;
+                if (op2 != 2)
+                    if ((((valor2>>16)&0x01) == 1))
+                        valor2 |= 0xFFFF0000;
+                    else
+                        valor2 &= 0x0000FFFF;
                 REG[registro1] |= valor2;
         }
     }
     if(op1 == 0)
         if(op2 == 0) //memoria a memoria
-            printf("MOV [%d], [%d] \n",posmem1+offset1-61, posmem2+offset2-61);
+            printf("MOV [%d], [%d] \n",posmem1-61, posmem2-61);
         else
             if(op2 == 1) // inmediato a memoria
-                printf("MOV [%d], %d \n",posmem1+offset1-61, valor2);
+                printf("MOV [%d], %d \n",posmem1-61, valor2);
             else // registro a memoria
-                printf("MOV [%d], %d \n",posmem1+offset1-61, registro2);
+                printf("MOV [%d], %d \n",posmem1-61, registro2);
     else
         if(op2 == 0) //memoria a registro
-            printf("MOV %d, [%d] \n", registro1, posmem2+offset2-61);
+            printf("MOV %d, [%d] \n", registro1, posmem2-61);
         else
             if(op2 == 1) // inmediato a registro
                 printf("MOV %d, %d \n",registro1, valor2);
@@ -202,11 +243,11 @@ void MOV(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
 
 }
 
-void ADD(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+void ADD(char op1, char op2, char MEM[], int REG[], TRTDS TDS[]) // todo roto
 {
     char auxchar = 0, posmem1 = 0, posmem2 = 0, registro1 = 0, registro2 = 0, segmento1 = 0, segmento2 = 0;
     short int inmediato2 = 0, offset1 = 0, offset2 = 0;
-    int valor2 = 0; // "instrucciones"
+    int i, valor1 = 0, valor2 = 0;
     switch (op1)
     {
         case 0: // op1 es memoria
@@ -214,7 +255,7 @@ void ADD(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
             offset1 = MEM[REG[5]++];
             offset1 = offset1<<8;
             offset1 |= MEM[REG[5]++];
-            posmem1 = TDS[REG[1]>>16].base;
+            posmem1 = baseds(TDS, REG) + offset1;
             if(registro1 != 1)
                 posmem1 += REG[registro1];
         break;
@@ -231,23 +272,26 @@ void ADD(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
             offset2 = MEM[REG[5]++];
             offset2 = offset2<<8;
             offset2 |= MEM[REG[5]++];
-            posmem2 = TDS[REG[1]>>16].base;
+            posmem2 = baseds(TDS, REG) + offset2;
             if(registro2 != 1)
                 posmem2 += REG[registro2];
-            valor2 = MEM[posmem2+offset2];
 
+            for (i = 0 ; i < 4 ; i++)
+                {
+                    valor2 = valor2<<8;
+                    valor2 = MEM[posmem2+i];
+                }
         break;
         case 1: //op2 es inmediato
             inmediato2 = MEM[REG[5]++];
             inmediato2 = inmediato2<<8;
             inmediato2 |= MEM[REG[5]++];
-            valor2 = inmediato2;
+            valor2 = corrimiento(inmediato2, 16, 16);
         break;
         case 2: //op2 es registro
             auxchar = MEM[REG[5]++];
             registro2 = auxchar&0x0F;
             segmento2 = (auxchar>>4)&0x03;
-
             valor2 = REG[registro2];
             switch(segmento2)
             {
@@ -263,8 +307,24 @@ void ADD(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
             }
         break;
     }
+
     if(op1 == 0) //op1 es memoria
-        MEM[posmem1+offset1] += valor2;
+    {
+        for (i = 0 ; i < 4 ; i++)
+        {
+            valor1 = valor1<<8;
+            valor1 |= MEM[posmem1+i];
+        }
+        printf("valor1: %u\n", valor1);
+        valor1 += valor2;
+        MEM[posmem1+3] = valor1;
+        MEM[posmem1+2] = valor1>>8;
+        MEM[posmem1+1] = valor1>>16;
+        MEM[posmem1] = valor1>>24;
+
+
+
+    }
     else //op1 es registro
     {
         switch(segmento1)
@@ -284,20 +344,25 @@ void ADD(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
     }
     if(op1 == 0)
         if(op2 == 0) //memoria a memoria
-            printf("ADD [%d], [%d] \n",posmem1+offset1-61, posmem2+offset2-61);
+            printf("ADD [%d], [%d] \n",posmem1-61, posmem2-61);
         else
             if(op2 == 1) // inmediato a memoria
-                printf("ADD [%d], %d \n",posmem1+offset1-61, valor2);
+                printf("ADD [%d], %d \n",posmem1-61, valor2);
             else // registro a memoria
-                printf("ADD [%d], %d \n",posmem1+offset1-61, registro2);
+                printf("ADD [%d], %d \n",posmem1-61, registro2);
     else
         if(op2 == 0) //memoria a registro
-            printf("ADD %d, [%d] \n", registro1, posmem2+offset2-61);
+            printf("ADD %d, [%d] \n", registro1, posmem2-61);
         else
             if(op2 == 1) // inmediato a registro
                 printf("ADD %d, %d \n",registro1, valor2);
             else // registro a registro
                 printf("ADD %d, %d \n",registro1, registro2);
+}
+
+void SUB(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+{
+
 }
 
 void SWAP(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
@@ -313,7 +378,7 @@ void SWAP(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
             offset1 = MEM[REG[5]++];
             offset1 = offset1<<8;
             offset1 |= MEM[REG[5]++];
-            posmem1 = TDS[REG[1]>>16].base;
+            posmem1 = baseds(TDS, REG) + offset1;
             if(registro1 != 1)
                 posmem1 += REG[registro1];
         break;
@@ -331,17 +396,9 @@ void SWAP(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
             offset2 = MEM[REG[5]++];
             offset2 = offset2<<8;
             offset2 |= MEM[REG[5]++];
-            posmem2 = TDS[REG[1]>>16].base;
+            posmem2 = baseds(TDS, REG) + offset2;
             if(registro2 != 1)
                 posmem2 += REG[registro2];
-            valor2 = MEM[posmem2+offset2];
-            if (op1 == 2)
-            {
-                registro2 = registro1;
-                segmento2 = segmento1;
-                posmem1 = posmem2;
-                offset1 = offset2;
-            }
         break;
         case 2: //op2 es registro
             auxchar = MEM[REG[5]++];
@@ -349,25 +406,41 @@ void SWAP(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
             segmento2 = (auxchar>>4)&0x03;
         break;
     }
-    if(op1 == 0)
-        if (op2 == 0) // memoria a memoria
-        {
-            for(i = 0 ; i < 4 ; i++)
-            {
-                auxV1[i] = MEM[i+posmem1+offset1];
-                auxV2[i] = MEM[i+posmem2+offset2];
-            }
-            for(i = 0 ; i < 4 ; i++)
-            {
-                MEM[i+posmem2+offset2] = auxV1[i];
-                MEM[i+posmem1+offset1] = auxV2[i];
-            }
-        }
-        else // memoria a registro
-        {
-            for(i = 0 ; i < 4 ; i++)
-                auxV1[i] = MEM[i+posmem1+offset1];
 
+    if(op1 == 0) // op1 es memoria
+        if (op2 == 0) // op2 es memoria
+        {
+            for(i = 0 ; i < 4 ; i++) // 10010000
+            {
+                auxV1[i] = MEM[posmem1+i];
+                auxV2[i] = MEM[posmem2+i];
+                printf("byte %d: %d - ",i, MEM[posmem1+i]);
+                printf("byte %d: %d\n",i, MEM[posmem2+i]);
+            }
+            for(i = 0 ; i < 4 ; i++)
+            {
+                MEM[posmem2+i] = auxV1[i];
+                MEM[posmem1+i] = auxV2[i];
+                printf("byte %d: %d - ",i, MEM[posmem1+i]);
+                printf("byte %d: %d\n",i, MEM[posmem2+i]);
+            }
+            for(i = 0 ; i < 4 ; i++)
+            {
+                valor1 = valor1<<8;
+                valor1 = MEM[posmem1+i];
+            }
+            for(i = 0 ; i < 4 ; i++)
+            {
+                valor2 = valor2<<8;
+                valor2 = MEM[posmem2+i];
+            }
+            printf("valor1: %d - ", valor1&0xFFFF);
+            printf("valor2: %d\n", valor2&0xFFFF);
+        }
+        else // op2 es registro
+        {
+            for(i = 0 ; i < 4 ; i++)
+                auxV1[i] = MEM[posmem1+i];
             valor2 = REG[registro2];
             switch(segmento2)
             {
@@ -381,10 +454,10 @@ void SWAP(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
                     valor2 = corrimiento(valor2, 16, 16);
                 break;
             }
-            MEM[posmem1+offset1] = (valor2>>24)&0xFF;
-            MEM[posmem1+offset1+1] = (valor2>>16)&0xFF;
-            MEM[posmem1+offset1+2] = (valor2>>8)&0xFF;
-            MEM[posmem1+offset1+3] = (valor2)&0xFF;
+            MEM[posmem1] = (valor2>>24)&0xFF;
+            MEM[posmem1+1] = (valor2>>16)&0xFF;
+            MEM[posmem1+2] = (valor2>>8)&0xFF;
+            MEM[posmem1+3] = (valor2)&0xFF;
 
             for(i = 0 ; i < 4 ; i++)
             {
@@ -392,70 +465,110 @@ void SWAP(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
                 REG[registro2] = auxV1[i];
             }
         }
-    else //registro a registro
-    {
-        valor1 = REG[registro1];
-        valor2 = REG[registro2];
-        switch(segmento1)
+    else // op1 es registro
+        if (op2 = 0) // op2 es memoria
         {
-            case 1:
-                valor1 = corrimiento(valor1, 24, 24);
-            break;
-            case 2:
-                valor1 = corrimiento(valor1, 16, 24);
-            break;
-            case 3:
-                valor1 = corrimiento(valor1, 16, 16);
-            break;
+            for(i = 0 ; i < 4 ; i++)
+                auxV2[i] = MEM[posmem2+i];
+            valor1 = REG[registro1];
+            switch(segmento1)
+            {
+                case 1:
+                    valor1 = corrimiento(valor1, 24, 24);
+                break;
+                case 2:
+                    valor1 = corrimiento(valor1, 16, 24);
+                break;
+                case 3:
+                    valor1 = corrimiento(valor1, 16, 16);
+                break;
+            }
+            MEM[posmem2] = (valor1>>24)&0xFF;
+            MEM[posmem2+1] = (valor1>>16)&0xFF;
+            MEM[posmem2+2] = (valor1>>8)&0xFF;
+            MEM[posmem2+3] = (valor1)&0xFF;
+
+            for(i = 0 ; i < 4 ; i++)
+            {
+                REG[registro1]<<8;
+                REG[registro1] = auxV2[i];
+            }
         }
-        switch(segmento2)
+        else // op2 es registro
         {
-            case 0:
-                REG[registro2] = valor1;
-            case 1:
-                valor2 = corrimiento(valor2, 24, 24);
-                REG[registro2] &= 0xFFFFFF00;
-                REG[registro2] |= valor1;
-            break;
-            case 2:
-                valor2 = corrimiento(valor2, 16, 24);
-                REG[registro2] &= 0xFFFF00FF;
-                REG[registro2] |= (valor1<<8);
-            break;
-            case 3:
-                valor2 = corrimiento(valor2, 16, 16);
-                REG[registro2] &= 0xFFFF0000;
-                REG[registro2] |= (valor1);
-            break;
+            valor1 = REG[registro1];
+            valor2 = REG[registro2];
+            switch(segmento1)
+            {
+                case 1:
+                    valor1 = corrimiento(valor1, 24, 24);
+                break;
+                case 2:
+                    valor1 = corrimiento(valor1, 16, 24);
+                break;
+                case 3:
+                    valor1 = corrimiento(valor1, 16, 16);
+                break;
+            }
+            switch(segmento2)
+            {
+                case 0:
+                    REG[registro2] = valor1;
+                case 1:
+                    valor2 = corrimiento(valor2, 24, 24);
+                    REG[registro2] &= 0xFFFFFF00;
+                    REG[registro2] |= valor1;
+                break;
+                case 2:
+                    valor2 = corrimiento(valor2, 16, 24);
+                    REG[registro2] &= 0xFFFF00FF;
+                    REG[registro2] |= (valor1<<8);
+                break;
+                case 3:
+                    valor2 = corrimiento(valor2, 16, 16);
+                    REG[registro2] &= 0xFFFF0000;
+                    REG[registro2] |= (valor1);
+                break;
+            }
+            switch(segmento1)
+            {
+                case 0:
+                    REG[registro1] = valor2;
+                case 1:
+                    REG[registro1] &= 0xFFFFFF00;
+                    REG[registro1] |= valor2;
+                break;
+                case 2:
+                    REG[registro1] &= 0xFFFF00FF;
+                    REG[registro1] |= (valor2<<8);
+                break;
+                case 3:
+                    REG[registro1] &= 0xFFFF0000;
+                    REG[registro1] |= (valor2);
+                break;
+            }
         }
-        switch(segmento1)
-        {
-            case 0:
-                REG[registro1] = valor2;
-            case 1:
-                REG[registro1] &= 0xFFFFFF00;
-                REG[registro1] |= valor2;
-            break;
-            case 2:
-                REG[registro1] &= 0xFFFF00FF;
-                REG[registro1] |= (valor2<<8);
-            break;
-            case 3:
-                REG[registro1] &= 0xFFFF0000;
-                REG[registro1] |= (valor2);
-            break;
-        }
-    }
+
     if(op1 == 0)
         if(op2 == 0) //memoria a memoria
-            printf("SWAP [%d], [%d] \n",posmem1+offset1-61, posmem2+offset2-61);
+            printf("SWAP [%d], [%d] \n",posmem1-61, posmem2-61);
         else // registro a memoria
-            printf("SWAP [%d], %d \n",posmem1+offset1-61, registro2);
+            printf("SWAP [%d], %d \n",posmem1-61, registro2);
     else
         if(op2 == 0) //memoria a registro
-            printf("SWAP %d, [%d] \n", registro1, posmem2+offset2-61);
+            printf("SWAP %d, [%d] \n", registro1, posmem2-61);
         else // registro a registro
             printf("SWAP %d, %d \n",registro1, registro2);
+}
+
+void MUL(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+{
+
+}
+
+void DIV(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+{
+
 }
 
 void CMP(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
@@ -471,7 +584,7 @@ void CMP(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
             offset1 = MEM[REG[5]++];
             offset1 = offset1<<8;
             offset1 |= MEM[REG[5]++];
-            posmem1 = TDS[REG[1]>>16].base;
+            posmem1 = baseds(TDS, REG);
             if(registro1 != 1)
                 posmem1 += REG[registro1];
             valor1 = MEM[posmem1+offset1];
@@ -505,7 +618,7 @@ void CMP(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
             offset2 = MEM[REG[5]++];
             offset2 = offset2<<8;
             offset2 |= MEM[REG[5]++];
-            posmem2 = TDS[REG[1]>>16].base;
+            posmem2 = baseds(TDS, REG);
             if(registro2 != 1)
                 posmem2 += REG[registro2];
             valor2 = MEM[posmem2+offset2];
@@ -546,6 +659,179 @@ void CMP(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
     printf("N: %d - Z: %d\n",(REG[8]>>31)&01, (REG[8]>>30)&01);
 }
 
+void SHL(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+{
+
+}
+
+void SHR(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+{
+
+}
+
+void AND(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+{
+
+}
+
+void OR(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+{
+
+}
+
+void XOR(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+{
+
+}
+
+void SYS(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+{
+    int eax = 0, posmem = 0, i, j;
+    short int cantidad = 0, al = 0, cl = 0, ch = 0, operacion = 0;
+    int aux = 0;
+
+    al = REG[10]&0xFF; //al
+    ch = (REG[12]>>8) & 0xFF; //ch
+    cl = REG[12] & 0xFF; //cl
+    posmem = baseds(TDS, REG) + REG[13]&0xFFFF; //dx
+
+    operacion = MEM[REG[5]++];
+    operacion = operacion<<8;
+    operacion |= MEM[REG[5]++];
+    switch(operacion)
+    {
+        case 1: //lectura
+            switch(al)
+            {
+                case 1: // decimal
+                    for(i = 0 ; i < cl ; i++)
+                    {
+                        scanf("%d", &aux);
+                        for(j = 0 ; j < ch ; j++)
+                        {
+                            MEM[posmem+j] = aux;
+                            aux = aux>>8;
+                        }
+                        posmem += 4;
+                    }
+                case 2: // caracteres
+                    for(i = 0 ; i < cl ; i++)
+                    {
+                        scanf("%c", &aux);
+                        for(j = 0 ; j < ch ; j++)
+                        {
+                            MEM[posmem+j] = aux;
+                            aux = aux>>8;
+                        }
+                        posmem += 4;
+                    }
+                break;
+                case 4: // octal
+                    for(i = 0 ; i < cl ; i++)
+                    {
+                        scanf("%o", &aux);
+                        for(j = 0 ; j < ch ; j++)
+                        {
+                            MEM[posmem+j] = aux;
+                            aux = aux>>8;
+                        }
+                        posmem += 4;
+                    }
+                break;
+                case 8: // hexadecimal
+                    for(i = 0 ; i < cl ; i++)
+                    {
+                        scanf("%x", &aux);
+                        for(j = 0 ; j < ch ; j++)
+                        {
+                            MEM[posmem+j] = aux;
+                            aux = aux>>8;
+                        }
+                        posmem += 4;
+                    }
+                break;
+            }
+        break;
+        case 2: // imprimir
+            switch(al)
+            {
+                case 1: // decimal
+                    for(i = 0 ; i < cl ; i++)
+                    {
+                        for(j = 0 ; j < ch ; j++)
+                        {
+                            aux = aux<<8;
+                            aux = MEM[posmem+j];
+                        }
+                        posmem += 4;
+                        printf("%d\n", aux);
+                    }
+                break;
+                case 2: // caracteres
+                    for(i = 0 ; i < cl ; i++)
+                    {
+                        for(j = 0 ; j < ch ; j++)
+                        {
+                            aux = aux<<8;
+                            aux = MEM[posmem+j];
+                        }
+                        posmem += 4;
+                        printf("%c\n", aux);
+                    }
+                break;
+                case 4: // octal
+                    for(i = 0 ; i < cl ; i++)
+                    {
+                        for(j = 0 ; j < ch ; j++)
+                        {
+                            aux = aux<<8;
+                            aux = MEM[posmem+j];
+                        }
+                        posmem += 4;
+                        printf("%o\n", aux);
+                    }
+                break;
+                case 8: // hexadecimal
+                    for(i = 0 ; i < cl ; i++)
+                    {
+                        for(j = 0 ; j < ch ; j++)
+                        {
+                            aux = aux<<8;
+                            aux = MEM[posmem+j];
+                        }
+                        posmem += 4;
+                        printf("%x\n", aux);
+                    }
+                break;
+            }
+        break;
+    }
+}
+
+void JMP(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+{
+    int N = (REG[8]>>31) & 0x01;
+    short int inmediato;
+
+    inmediato = MEM[REG[5]++];
+    inmediato = inmediato<<8;
+    inmediato |= MEM[REG[5]++];
+    printf("salta a %d\n", inmediato);
+    REG[5] = inmediato;
+}
+
+void JZ(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+{
+    int Z = (REG[8]>>30) & 0x01;
+    short int inmediato;
+
+    inmediato = MEM[REG[5]++];
+    inmediato = inmediato<<8;
+    inmediato |= MEM[REG[5]++];
+    if(Z == 1)
+        REG[5] = inmediato;
+}
+
 void JP(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
 {
     int N = (REG[8]>>31) & 0x01;
@@ -554,140 +840,116 @@ void JP(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
     inmediato = MEM[REG[5]++];
     inmediato = inmediato<<8;
     inmediato |= MEM[REG[5]++];
-   // printf("byte: %d\n", inmediato);
     if(N == 0)
         REG[5] = inmediato;
 }
 
-void SYS(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+void JN(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
 {
-    int formato = 0, posmem = 0, i, j;
-    short int cantidad = 0, tamanio = 0, operacion = 0;
-    int aux;
+    int N = (REG[8]>>31) & 0x01;
+    short int inmediato;
 
-    formato = REG[10]; //al
-    tamanio = (REG[12]>>8) & 0xFF; //ch
-    cantidad = REG[12] & 0xFF; //cl
-    posmem = TDS[REG[1]].base + REG[13]; //dx
+    inmediato = MEM[REG[5]++];
+    inmediato = inmediato<<8;
+    inmediato |= MEM[REG[5]++];
+    if(N == 1)
+        REG[5] = inmediato;
+}
 
-    operacion = MEM[REG[5]++];
-    operacion = operacion<<8;
-    operacion |= MEM[REG[5]++];
+void JNZ(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+{
+    int Z = (REG[8]>>30) & 0x01;
+    short int inmediato;
 
-    switch(operacion)
-    {
-        case 1: //lectura
-            switch(formato)
-            {
-                case 1: // decimal
-                    for(i = 0 ; i < cantidad ; i++)
-                    {
-                        scanf("%d", &aux);
-                        for(j = tamanio ; j > 0 ; j--)
-                            MEM[posmem+i+j] = (aux>>(j*8))&0xFF;
-                    }
-                case 2: // caracteres
-                    for(i = 0 ; i < cantidad ; i++)
-                    {
-                        scanf("%c", &aux);
-                        for(j = tamanio ; j > 0 ; j--)
-                            MEM[posmem+i+j] = (aux>>(j*8))&0xFF;
-                    }
-                break;
-                case 4: // octal
-                    for(i = 0 ; i < cantidad ; i++)
-                    {
-                        scanf("%o", &aux);
-                        for(j = tamanio ; j > 0 ; j--)
-                            MEM[posmem+i+j] = (aux>>(j*8))&0xFF;
-                    }
-                break;
-                case 8: // hexadecimal
-                    for(i = 0 ; i < cantidad ; i++)
-                    {
-                        scanf("%x", &aux);
-                        for(j = tamanio ; j > 0 ; j--)
-                            MEM[posmem+i+j] = (aux>>(j*8))&0xFF;
-                    }
-                break;
-            }
-        break;
-        case 2: // escritura
-            switch(formato)
-            {
-                case 1: // decimal
-                    for(i = 0 ; i < cantidad ; i++)
-                    {
-                        for(j = tamanio ; j > 0 ; j--)
-                        {
-                            aux = aux<<8;
-                            aux = MEM[posmem+i*tamanio+j];
-                        }
-                        printf("%d\n", aux);
-                    }
-                break;
-                case 2: // caracteres
-                    for(i = 0 ; i < cantidad ; i++)
-                    {
-                        for(j = 0 ; j < tamanio ; j++)
-                            printf("%c", MEM[posmem+i+j]);
-                        printf("\n");
-                    }
-                break;
-                case 4: // octal
-                    for(i = 0 ; i < cantidad ; i++)
-                    {
-                        for(j = 0 ; j < tamanio ; j++)
-                            printf("%o", MEM[posmem+i+j]);
-                        printf("\n");
-                    }
-                break;
-                case 8: // hexadecimal
-                    for(i = 0 ; i < cantidad ; i++)
-                    {
-                        for(j = 0 ; j < tamanio ; j++)
-                            printf("%x", MEM[posmem+i+j]);
-                        printf("\n");
-                    }
-                break;
-            }
-        break;
-    }
+    inmediato = MEM[REG[5]++];
+    inmediato = inmediato<<8;
+    inmediato |= MEM[REG[5]++];
+    if(Z == 0)
+        REG[5] = inmediato;
+}
+
+void JNP(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+{
+    int N = (REG[8]>>31) & 0x01, Z = (REG[8]>>30) & 0x01;
+    short int inmediato;
+
+    inmediato = MEM[REG[5]++];
+    inmediato = inmediato<<8;
+    inmediato |= MEM[REG[5]++];
+    if(N == 1 || Z == 1 )
+        REG[5] = inmediato;
+}
+
+void JNN(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+{
+    int N = (REG[8]>>31) & 0x01;
+    short int inmediato;
+
+    inmediato = MEM[REG[5]++];
+    inmediato = inmediato<<8;
+    inmediato |= MEM[REG[5]++];
+    if(N == 0)
+        REG[5] = inmediato;
+}
+
+void LDL(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+{
+    char auxchar;
+}
+
+void LDH(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+{
+
+}
+
+void RND(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+{
+
+}
+
+void NOT(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+{
+
+}
+
+void STOP(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+{
+    printf("FIN");
 }
 
 void procesoDatos(char MEM[], TRTDS TDS[], int REG[], t_func funciones[])
 {
-    char inst, op1, op2, codop;
-    int i, n = TDS[REG[1]>>16].base;
-    for (i = 0 ; i < n ; i++)
+    char inst, op1 = 0, op2, codop;
+    while(op1 != 3)
     {
         inst = MEM[REG[5]++];
         codigos(inst, &op1, &op2, &codop);
         funciones[codop](op1, op2, MEM, REG, TDS);
         //dissasembler(op1, op2, codop)
     }
+    scanf("");
 }
 
 void cargaFunciones(t_func funciones[])
 {
         funciones[0] = MOV;
         funciones[1] = ADD;
-  //      funciones[2] = SUB;
-        funciones[3] = SWAP;/*
+        funciones[2] = SUB;
+        funciones[3] = SWAP;
         funciones[4] = MUL;
-        funciones[5] = DIV;*/
+        funciones[5] = DIV;
         funciones[6] = CMP;
-    /*  funciones[7] = SHL;
+        funciones[7] = SHL;
         funciones[8] = SHR;
         funciones[9] = AND;
         funciones[10] = OR;
         funciones[11] = XOR;
-*/
-        funciones[48] = SYS;/*
+
+        funciones[48] = SYS;
         funciones[49] = JMP;
-        funciones[50] = JZ;*/
+        funciones[50] = JZ;
         funciones[51] = JP;
-      /*  funciones[52] = JN;
+        funciones[52] = JN;
         funciones[53] = JNZ;
         funciones[54] = JNP;
         funciones[55] = JNN;
@@ -695,16 +957,16 @@ void cargaFunciones(t_func funciones[])
         funciones[57] = LDH;
         funciones[58] = RND;
         funciones[59] = NOT;
-        funciones[240] = STOP;*/
+        funciones[240] = STOP;
     }
 
-
-
-int main(){
+int main()
+{
     int TAM, RAM = 16384, REG[16];
     //( 0 = CS / 1 = DS / 5 = IP / 8 = CC / 9 = AC )
     char MEM[RAM];
     TRTDS TDS[8];
+
     //declaracion de funciones
     t_func funciones[256];
     cargaFunciones(funciones);
@@ -713,7 +975,6 @@ int main(){
     lectura(MEM, &TAM);
     iniciaTablaDeSegmentos(TDS, RAM, TAM);
     iniciaRegistros(REG);
-
 
     procesoDatos(MEM, TDS, REG, funciones);
     return 0;
