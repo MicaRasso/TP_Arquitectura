@@ -1,0 +1,11 @@
+# depslib dependency file v1.0
+1681168997 source:c:\programas_c\tp_arqui\main.c
+	<stdio.h>
+	<stdlib.h>
+	<math.h>
+
+1681173172 source:c:\tp_arquitectura\main.c
+	<stdio.h>
+	<stdlib.h>
+	<math.h>
+
