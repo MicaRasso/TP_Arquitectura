@@ -815,6 +815,7 @@ void CMP(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
         case 0: //op2 es memoria
             leemem(&posmem2,MEM,TDS,REG);
             leedemem(&valor2,MEM,posmem2);
+            printf("cmp posmem2: %d - valor2: %d\n",posmem2,valor2);
         break;
         case 1: //op2 es inmediato
             inmediato2 = MEM[REG[5]++];
@@ -842,13 +843,15 @@ void CMP(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
         break;
     }
     valor1 -= valor2;
-    REG[8] = (valor1) & 0x80000000;
-    if (valor1 == 0)
-        REG[8] |= 0x40000000;
+    if(valor1>0)
+        REG[8]=0;
     else
-        REG[8] &= 0x80000000;
-        printf("CMP %d, %d \n",valor1+valor2,valor2);
-        printf("N: %d - Z: %d\n",(REG[8]>>31)&01, (REG[8]>>30)&01);
+        if(valor1<0)
+            REG[8] = (valor1) & 0x80000000;
+        else //valor1 == 0
+            REG[8] |= 0x40000000;
+    printf("CMP %d, %d \n",valor1+valor2,valor2);
+    printf("N: %d - Z: %d\n",(REG[8]>>31)&01, (REG[8]>>30)&01);
 }
 
 void SHL(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
@@ -1346,9 +1349,8 @@ void SYS(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
     cl = REG[12] & 0xFF; //cl
     posmem = baseds(TDS, REG) + REG[13]&0xFFFF; //dx
 
-    operacion = MEM[REG[5]++];
-    operacion = operacion<<8;
-    operacion |= MEM[REG[5]++];
+
+    lee2byte(&operacion,MEM,REG);
     switch(operacion)
     {
         case 1: //lectura
@@ -1357,19 +1359,25 @@ void SYS(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
                 case 1: // decimal
                     for(i = 0 ; i < cl ; i++)
                     {
-                        printf("Ingrese datos: ");
+                        printf("Ingrese datos (decimal): ");
                         scanf("%d", &aux);
-                        for(j = 0 ; j < ch ; j++)
+
+                        for(j = (ch-1) ; j >=0 ; j--)
                         {
                             MEM[posmem+j] = aux;
                             aux = aux>>8;
                         }
+                        printf("sys %d - %d - %d - %d\n",MEM[posmem], MEM[posmem+1],MEM[posmem+2],MEM[posmem+3]);
+                        int valor1;
+                        leedemem(&valor1,MEM,posmem);
+                        printf("sys posmem:%d valor1:%d\n",posmem,valor1);
                         posmem += 4;
+
                     }
                 case 2: // caracteres
                     for(i = 0 ; i < cl ; i++)
                     {
-                        printf("Ingrese datos: ");
+                        printf("Ingrese datos (caracter): ");
                         scanf("%c", &aux);
                         for(j = 0 ; j < ch ; j++)
                         {
@@ -1382,7 +1390,7 @@ void SYS(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
                 case 4: // octal
                     for(i = 0 ; i < cl ; i++)
                     {
-                        printf("Ingrese datos: ");
+                        printf("Ingrese datos (octal): ");
                         scanf("%o", &aux);
                         for(j = 0 ; j < ch ; j++)
                         {
@@ -1395,7 +1403,7 @@ void SYS(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
                 case 8: // hexadecimal
                     for(i = 0 ; i < cl ; i++)
                     {
-                        printf("Ingrese datos: ");
+                        printf("Ingrese datos (hexadecimal): ");
                         scanf("%x", &aux);
                         for(j = 0 ; j < ch ; j++)
                         {
