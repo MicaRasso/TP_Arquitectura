@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <time.h>
 
 //tipo tabla descriptores de segmento
 typedef struct
@@ -8,8 +9,10 @@ typedef struct
     short int base, size;
 } TRTDS;
 
+typedef void (*t_dis) (int V[]);
+
 //declaracion del tipo vector de funciones PENDIENTE
-typedef void (*t_func)(char op1, char op2, char MEM[], int REG[], TRTDS TDS[]);
+typedef void (*t_func)(int V[], char MEM[], int REG[]);
 
 void iniciaTablaDeSegmentos(TRTDS TDS[], int RAM, int TAM)
 {
@@ -188,120 +191,116 @@ void lectura(char MEM[], int *TAM)
         printf("No se pudo abrir el archivo\n");
 }
 
-void codigos(char inst, char *op1, char *op2, char *codop)
+void codigos(char inst, int V[], char *codop, char MEM[], TRTDS TDS[], int REG[])
 {
-    int aux=0;
-    aux=inst;
-    *op1 = (inst>>0x6)&0x03;
-    *op2 = (inst>>0x4)&0x03;
-    if (*op1 == 3) // probar 0x03
+    int aux = inst;
+
+    V[0] = (inst>>0x6)&0x03;
+    V[0] &= 0xFF;
+    V[4] = (inst>>0x4)&0x03;
+    V[4] &= 0xFF;
+
+    if (V[0] == 3) // probar 0x03
         *codop = aux&0xFF;
     else
-        if (*op2 == 3)
+        if (V[4] == 3)
             *codop = inst&0x3F;
         else
             *codop = inst&0x0F;
-    printf("\nop1: %d - op2: %d - codop: %x\n",*op1, *op2, *codop);
+
+    for (i = 0 ; i < 5 ; i + 4)
+        switch (V[0+i])
+        {
+            case 0: // op1 es memoria
+                leemem(&posmem, MEM, TDS, REG);
+                V[1+i] = posmem;
+                leedemem(&valor, MEM, posmem);
+                V[3+i] = valor;
+            break;
+            case 1:
+                leeinm(&aux, MEM, REG);
+                V[3+i] = aux;
+            break;
+            case 2: // op1 es registro
+                leereg(&registro, &segmento, MEM, REG);
+                V[1+i] = registro;
+                V[2+i] = segmento;
+                switch (V[2+i])
+                {
+                    case 0:
+                        V[3+i] = REG[V[1+i]];
+                    break;
+                    case 1:
+                        V[3+i] = corrimiento(REG[V[1+i]], 24, 24);
+                    break;
+                    case 2:
+                        V[3+i] = corrimiento(REG[V[1+i]], 16, 24);
+                    break;
+                    case 3:
+                        V[3+i] = corrimiento(REG[V[1+i]], 16, 16);
+                    break;
+                }
+            break;
+        }
 }
-
-void MOV(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+void MOV(int V[], char MEM[], int REG[])
 {
-    char registro1 = 0, registro2 = 0, segmento1 = 0, segmento2 = 0;
-    short int posmem1 = 0, posmem2 = 0, aux2 = 0;
-    int i = 0, valor2 = 0;
+    int i = 0;
 
-    switch (op1)
-    {
-        case 0: // op1 es memoria
-            leemem(&posmem1,MEM,TDS,REG);
-        break;
-        case 2: // op1 es registro
-            leereg(&registro1, &segmento1,MEM,REG);
-        break;
-    }
-
-    switch (op2)
-    {
-        case 0: //op2 es memoria
-            leemem(&posmem2,MEM,TDS,REG);
-            leedemem(&valor2,MEM,posmem2);
-        break;
-        case 1: //op2 es inmediato
-            leeinm(&aux2,MEM,REG);
-            valor2 = aux2;
-        break;
-        case 2: //op2 es registro
-            leereg(&registro2, &segmento2,MEM,REG);
-            valor2 = REG[registro2];
-            switch(segmento2)
-            {
-                case 1:
-                    valor2 = corrimiento(valor2, 24, 24);
-                break;
-                case 2:
-                    valor2 = corrimiento(valor2, 16, 24);
-                break;
-                case 3:
-                    valor2 = corrimiento(valor2, 16, 16);
-                break;
-            }
-        break;
-    }
-
-    if(op1 == 0) //op1 es memoria
-        if (op2 == 0) //op2 es memoria
+    if(V[0] == 0) //op1 es memoria
+        if (V[4] == 0) //op2 es memoria
             for (i = 0 ; i < 4 ; i++)
-                MEM[posmem1+i] = MEM[posmem2+i];
+                MEM[V[1]+i] = MEM[V[5]+i];
         else
-            if (op2 == 1) // op2 es inmediato
+            if (V[4] == 1) // op2 es inmediato
             {
-                MEM[posmem1+2] = valor2>>8;
-                MEM[posmem1+3] = valor2;
+                MEM[V[1]+2] = V[7]>>8;
+                MEM[V[1]+3] = V[7];
             }
             else // op2 es registro
             {
-                MEM[posmem1] = valor2>>24;
-                MEM[posmem1+1] = valor2>>16;
-                MEM[posmem1+2] = valor2>>8;
-                MEM[posmem1+3] = valor2;
+                MEM[V[1]] = V[7]>>24;
+                MEM[V[1]+1] = V[7]>>16;
+                MEM[V[1]+2] = V[7]>>8;
+                MEM[V[1]+3] = V[7];
             }
     else //op1 es registro
     {
-        switch(segmento1)
+        switch(V[2])
         {
             case 0:
-                REG[registro1] = valor2;
+                REG[V[1]] = V[7];
             break;
             case 1:
-                REG[registro1] &= 0xFFFFFF00;
-                if (op2 != 2)
-                    if ((((valor2>>8)&0x01) == 1))
-                        valor2 |= 0xFFFFFF00;
+                REG[V[1]] &= 0xFFFFFF00;
+                if (V[4] != 2)
+                    if ((((V[7]>>8)&0x01) == 1))
+                        V[7] |= 0xFFFFFF00;
                     else
-                        valor2 &= 0x000000FF;
-                REG[registro1] |= valor2;
+                        V[7] &= 0x000000FF;
+                REG[V[1]] |= V[7];
             break;
             case 2:
-                REG[registro1] &= 0xFFFF00FF;
-                if (op2 != 2)
-                    if ((((valor2>>8)&0x01) == 1))
-                        valor2 |= 0xFFFFFF00;
+                REG[V[1]] &= 0xFFFF00FF;
+                if (V[4] != 2)
+                    if ((((V[7]>>8)&0x01) == 1))
+                        V[7] |= 0xFFFFFF00;
                     else
-                        valor2 &= 0x000000FF;
-                REG[registro1] |= valor2<<8;
+                        V[7] &= 0x000000FF;
+                REG[V[1]] |= V[7]<<8;
             break;
             case 3:
-                REG[registro1] &= 0xFFFF0000;
-                if (op2 != 2)
-                    if ((((valor2>>16)&0x01) == 1))
-                        valor2 |= 0xFFFF0000;
+                REG[V[1]] &= 0xFFFF0000;
+                if (V[4] != 2)
+                    if ((((V[7]>>16)&0x01) == 1))
+                        V[7] |= 0xFFFF0000;
                     else
-                        valor2 &= 0x0000FFFF;
-                REG[registro1] |= valor2;
+                        V[7] &= 0x0000FFFF;
+                REG[V[1]] |= V[7];
         }
     }
-    if(op1 == 0)
-        if(op2 == 0) //memoria a memoria
+    if(V[0] == 0)
+        if(V[4] == 0) //memoria a memoria
             printf("MOV [%d], [%d] \n",posmem1-TDS[1].base, posmem2-TDS[1].base);
         else
             if(op2 == 1) // inmediato a memoria
@@ -321,82 +320,37 @@ void MOV(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
 
 void ADD(char op1, char op2, char MEM[], int REG[], TRTDS TDS[]) // todo roto
 {
-    char registro1 = 0, registro2 = 0, segmento1 = 0, segmento2 = 0;
-    short int posmem1 = 0, posmem2 = 0, aux2 = 0, a = 0;
-    int j = 0, i = 0, valor1 = 0, valor2 = 0;
-
-    switch (op1)
+    if(V[0] == 0) //op1 es memoria
     {
-        case 0: // op1 es memoria
-            leemem(&a, MEM, TDS, REG);
-            posmem1 = a;
-        break;
-        case 2: // op1 es registro
-            leereg(&registro1, &segmento1, MEM, REG);
-        break;
-    }
-    switch (op2)
-    {
-        case 0: //op2 es memoria
-            leemem(&a, MEM, TDS, REG);
-            posmem2 = a;
-            leedemem(&valor2, MEM, posmem2);
-        break;
-        case 1: //op2 es inmediato
-            leeinm(&aux2, MEM, REG);
-            valor2 = aux2;
-            valor2 = corrimiento(valor2, 16, 16);
-        break;
-        case 2: //op2 es registro
-            leereg(&registro2, &segmento2, MEM, REG);
-            valor2 = REG[registro2];
-            switch(segmento2)
-            {
-                case 1:
-                    valor2 = corrimiento(valor2, 24, 24);
-                break;
-                case 2:
-                    valor2 = corrimiento(valor2, 16, 24);
-                break;
-                case 3:
-                    valor2 = corrimiento(valor2, 16, 16);
-                break;
-            }
-        break;
-    }
-
-    if(op1 == 0) //op1 es memoria
-    {
-        leedemem(&valor1, MEM, posmem1);
-        valor1 += valor2;
-        MEM[posmem1+3] = valor1;
-        MEM[posmem1+2] = valor1>>8;
-        MEM[posmem1+1] = valor1>>16;
-        MEM[posmem1] = valor1>>24;
+        V[3] += V[7];
+        MEM[V[1]+3] = V[3];
+        MEM[V[1]+2] = V[3]>>8;
+        MEM[V[1]+1] = V[3]>>16;
+        MEM[V[1]] = V[3]>>24;
     }
     else //op1 es registro
     {
-        switch(segmento1)
+        switch(V[2])
         {
             case 0:
-                REG[registro1] += valor2;
+                REG[V[1]] += V[7];
             break;
             case 1:
-                REG[registro1] += valor2;
+                REG[V[1]] += V[7];
             break;
             case 2:
-                REG[registro1] += valor2<<8;
+                REG[V[1]] += V[7]<<8;
             break;
             case 3:
-                REG[registro1] += valor2;
+                REG[V[1]] += V[7];
         }
-        valor1 = REG[registro1];
+        V[3] = REG[V[1]];
     }
 
-    if(valor1 > 0)
+    if(V[3] > 0)
         REG[8] = 0;
     else
-        if(valor1 < 0)
+        if(V[3] < 0)
             REG[8] = 0x80000000;
         else //valor1 == 0
             REG[8] = 0x40000000;
@@ -909,73 +863,13 @@ void DIV(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
                 printf("DIV %d, %d \n",registro1, registro2);
 }
 
-void CMP(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+void CMP(int V[], char MEM[], int REG[])
 {
     char registro1 = 0, registro2 = 0, segmento1 = 0, segmento2 = 0;
     short int posmem1 = 0, posmem2 = 0, aux1 = 0, aux2 = 0;
     int valor1 = 0, valor2 = 0;
 
-    switch (op1)
-    {
-        case 0: // op1 es memoria
-            leemem(&posmem1,MEM,TDS,REG);
-            leedemem(&valor1,MEM,posmem1);
-            printf("cmp posmem1: %d - valor1: %d\n",posmem1,valor1);
-        break;
-        case 1:
-            leeinm(&aux1, MEM, REG);
-            valor1 = aux1;
-        break;
-        case 2: // op1 es registro
-            leereg(&registro1,&segmento1,MEM,REG);
-            switch (segmento1)
-            {
-                case 0:
-                    valor1 = REG[registro1];
-                break;
-                case 1:
-                    valor1 = corrimiento(REG[registro1], 24, 24);
-                break;
-                case 2:
-                    valor1 = corrimiento(REG[registro1], 16, 24);
-                break;
-                case 3:
-                    valor1 = corrimiento(REG[registro1], 16, 16);
-                break;
-            }
-        break;
-        }
 
-    switch (op2)
-    {
-        case 0: //op2 es memoria
-            leemem(&posmem2, MEM, TDS, REG);
-            leedemem(&valor2,MEM,posmem2);
-            printf("cmp posmem2: %d - valor2: %d\n",posmem2,valor2);
-        break;
-        case 1: //op2 es inmediato
-            leeinm(&aux2, MEM, REG);
-            valor2 = aux2;
-        break;
-        case 2: //op2 es registro
-            leereg(&registro2, &segmento2, MEM, REG);
-            switch(segmento2)
-            {
-                case 0:
-                    valor2 = REG[registro2];
-                break;
-                case 1:
-                    valor2 = corrimiento(REG[registro2], 24, 24);
-                break;
-                case 2:
-                    valor2 = corrimiento(REG[registro2], 16, 24);
-                break;
-                case 3:
-                    valor2 = corrimiento(REG[registro2], 16, 16);
-                break;
-            }
-        break;
-    }
     printf("cmp valor1: %d / cmp valor2: %d\n", valor1, valor2);
     valor1 -= valor2;
     if(valor1 > 0)
@@ -1744,20 +1638,22 @@ void JNN(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
         printf("JNN no salta\n");
 }
 
-void LDL(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+void LDL(int V[], char MEM[], int REG[])
 {
-    char auxchar;
-
+    REG[9] &= 0xFFFF0000;
+    REG[9] |= valor1 & 0x0000FFFF;
 }
 
-void LDH(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+void LDH(int V[], char MEM[], int REG[])
 {
-
+    REG[9] &= 0x0000FFFF;
+    REG[9] |= valor1 & 0xFFFF0000;
 }
 
-void RND(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
+void RND(int V[], char MEM[], int REG[])
 {
-
+    srand(time(NULL));
+    REG[9] = rand() % V[3];
 }
 
 void NOT(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
@@ -1828,45 +1724,81 @@ void STOP(char op1, char op2, char MEM[], int REG[], TRTDS TDS[])
 
 void procesoDatos(char MEM[], TRTDS TDS[], int REG[], t_func funciones[])
 {
-    char inst, op1 = 0, op2, codop;
-    while(op1 != 3)
+    char inst, codop;
+    int V[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    while(V[0] != 3)
     {
         inst = MEM[REG[5]++];
-        codigos(inst, &op1, &op2, &codop);
-        funciones[codop](op1, op2, MEM, REG, TDS);
-        //dissasembler(op1, op2, codop)
+        codigos(inst, V, &codop, MEM, TDS, REG);
+        disassembler[codop](V);
+    }
+    V = {0, 0, 0, 0, 0, 0, 0, 0};
+    while(V[0] != 3)
+    {
+        inst = MEM[REG[5]++];
+        codigos(inst, V, &codop, MEM, TDS, REG);
+        funciones[codop](V, MEM, REG);
     }
     scanf("");
 }
 
+void cargaFuncionesDis (t_dis funciones[])
+{
+    funciones[0] = disMOV;
+    funciones[1] = disADD;
+    funciones[2] = disSUB;
+    funciones[3] = disSWAP;
+    funciones[4] = disMUL;
+    funciones[5] = disDIV;
+    funciones[6] = disCMP;
+    funciones[7] = disSHL;
+    funciones[8] = disSHR;
+    funciones[9] = disAND;
+    funciones[10] = disOR;
+    funciones[11] = disXOR;
+    funciones[48] = disSYS;
+    funciones[49] = disJMP;
+    funciones[50] = disJZ;
+    funciones[51] = disJP;
+    funciones[52] = disJN;
+    funciones[53] = disJNZ;
+    funciones[54] = disJNP;
+    funciones[55] = disJNN;
+    funciones[56] = disLDL;
+    funciones[57] = disLDH;
+    funciones[58] = disRND;
+    funciones[59] = disNOT;
+    funciones[240] = disSTOP;
+}
+
 void cargaFunciones(t_func funciones[])
 {
-        funciones[0] = MOV;
-        funciones[1] = ADD;
-        funciones[2] = SUB;
-        funciones[3] = SWAP;
-        funciones[4] = MUL;
-        funciones[5] = DIV;
-        funciones[6] = CMP;
-        funciones[7] = SHL;
-        funciones[8] = SHR;
-        funciones[9] = AND;
-        funciones[10] = OR;
-        funciones[11] = XOR;
-        funciones[48] = SYS;
-        funciones[49] = JMP;
-        funciones[50] = JZ;
-        funciones[51] = JP;
-        funciones[52] = JN;
-        funciones[53] = JNZ;
-        funciones[54] = JNP;
-        funciones[55] = JNN;
-        funciones[56] = LDL;
-        funciones[57] = LDH;
-        funciones[58] = RND;
-        funciones[59] = NOT;
-        funciones[240] = STOP;
-    }
+    funciones[0] = MOV;
+    funciones[1] = ADD;
+    funciones[2] = SUB;
+    funciones[3] = SWAP;
+    funciones[4] = MUL;
+    funciones[5] = DIV;
+    funciones[6] = CMP;
+    funciones[7] = SHL;
+    funciones[8] = SHR;
+    funciones[9] = AND;
+    funciones[10] = OR;
+    funciones[11] = XOR;
+    funciones[48] = SYS;
+    funciones[49] = JMP;
+    funciones[50] = JZ;
+    funciones[51] = JP;
+    funciones[52] = JN;
+    funciones[53] = JNZ;
+    funciones[54] = JNP;
+    funciones[55] = JNN;
+    funciones[56] = LDL;
+    funciones[57] = LDH;
+    funciones[58] = RND;
+    funciones[59] = NOT;
+    funciones[240] = STOP;
+}
 
 int main()
 {
@@ -1874,6 +1806,9 @@ int main()
     //( 0 = CS / 1 = DS / 5 = IP / 8 = CC / 9 = AC )
     char MEM[RAM];
     TRTDS TDS[8];
+
+    t_dis disassembler[256];
+    cargaFuncionesDis(disassembler);
 
     //declaracion de funciones
     t_func funciones[256];
