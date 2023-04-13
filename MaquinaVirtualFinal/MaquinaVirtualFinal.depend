@@ -1,0 +1,15 @@
+# depslib dependency file v1.0
+1681357247 source:d:\documentos\facultad\arquitecturadecomputadoras\maquinavirtualfinal\main.c
+	<stdio.h>
+	<stdlib.h>
+	<string.h>
+	<math.h>
+	<time.h>
+
+1681357247 source:c:\users\santiago\documents\maquinavirtualfinal\main.c
+	<stdio.h>
+	<stdlib.h>
+	<string.h>
+	<math.h>
+	<time.h>
+
