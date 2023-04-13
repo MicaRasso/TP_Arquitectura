@@ -9,8 +9,9 @@
 	<stdlib.h>
 	<math.h>
 
-1681222357 source:c:\users\micae\github\tp_arquitectura\main.c
+1681405774 source:c:\users\micae\github\tp_arquitectura\main.c
 	<stdio.h>
 	<stdlib.h>
-	<math.h>
+	<string.h>
+	<time.h>
 
